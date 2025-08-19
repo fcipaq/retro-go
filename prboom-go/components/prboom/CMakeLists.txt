@@ -16,6 +16,7 @@ rg_setup_compile_options(
     -Wno-format-overflow
     -Wno-char-subscripts
     -Wno-missing-field-initializers
+    -Wno-incompatible-pointer-types
     -DHAVE_CONFIG_H
     -O2
 )
