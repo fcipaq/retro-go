@@ -9,4 +9,5 @@ rg_setup_compile_options(
     -Wno-error=format
     -Wno-error=unused-value
     -Wno-format
+    -Wno-uninitialized
 )
