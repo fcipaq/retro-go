@@ -66,7 +66,12 @@ typedef struct {
 
 /* =========================================== LCD ==================================================*/
 #define LCD_ROTATION
-#define LCD_SCALING (3)
+#define LCD_SCALING (2)
+
+int m_win_left = 0;
+int m_win_top = 0;
+int m_win_width = TEST_BUFFER_WIDTH;
+int m_win_height = TEST_BUFFER_HEIGHT;
 
 static char *TAG = "DISP_DRV";
 static esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
@@ -206,7 +211,7 @@ IRAM_ATTR static bool test_notify_refresh_ready(esp_lcd_panel_handle_t panel, es
     if (prefer_vsync_over_fps) {
       // If the emulation loop has not yet acked the vsync event, then now it's too late
       // and the emulator has to wait another frame. This prevents vertical tearing 
-      // (horiz. tearing when roatated) but will cause low framerates. (Everyone get's to choose)
+      // (horiz. tearing when roatated) but will cause low framerates. (Everyone gets to choose)
       if (xSemaphoreTakeFromISR(fb_ready, NULL) != pdTRUE)
         goto bailout;
     }
@@ -359,24 +364,51 @@ void lcd_wait_vsync() {
 
 //================================================ RG system API ==============================================
 
+static int win_left, win_top, win_width, win_height, cursor;
+static uint16_t lcd_buffer[LCD_BUFFER_LENGTH];
+
 static void lcd_set_window(int left, int top, int width, int height)
 {
+    int right = left + width - 1;
+    int bottom = top + height - 1;
+    if (left < 0 || top < 0 || right >= RG_SCREEN_WIDTH || bottom >= RG_SCREEN_HEIGHT)
+        RG_LOGW("Bad lcd window (x0=%d, y0=%d, x1=%d, y1=%d)\n", left, top, right, bottom);
+    win_left = left;
+    win_top = top;
+    win_width = width;
+    win_height = height;
+    cursor = 0;
 }
 
 static inline uint16_t *lcd_get_buffer(size_t length)
 {
-    // RG_ASSERT_ARG(length < LCD_BUFFER_LENGTH);
-    return (uint16_t*) m_fb_front;
+    return (uint16_t*) fb_back;
 }
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
-  if ((void *) fb_back == (void *) fb[0]) {
-    fb_back = fb[1];
-  } else {
-    fb_back = fb[0];
-  }
+    int bpp = 2;
+    int pitch = TEST_BUFFER_WIDTH * bpp;
+    void *pixels = fb_back;
+    for (size_t i = 0; i < length; ++i) {
+        int real_top = win_top + (cursor / win_width);
+        int real_left = win_left + (cursor % win_width);
+        if (real_top >= TEST_BUFFER_HEIGHT || real_left >= TEST_BUFFER_WIDTH)
+            return;
+        uint16_t *dst = (void*)pixels + (real_top * pitch) + (real_left * bpp);
+        //uint16_t pixel = buffer[i];
+        *dst = buffer[i]; //((pixel & 0xFF) << 8) | ((pixel & 0xFF00) >> 8);;
+        cursor++;
+    }
 
+    esp_cache_msync((void *) fb_back, TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+
+}
+
+#if 0
+static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
+{
+/*
   uint16_t* src = buffer;
   uint16_t* dst = fb_back;
 
@@ -385,20 +417,35 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
     dst++;
     src++;
   }
-    
-  esp_cache_msync((void *) fb_back, length * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+*/
 
-  lcd_wait_vsync();
-  
+  for (int y = 0; y < m_win_height; y++) {
+   for (int x = 0; x < m_win_width; x++) {
+     fb_back[(x + m_win_left) + (y + m_win_top) * TEST_BUFFER_WIDTH] = buffer[x + y * m_win_width]; 
+   }
+  }
+
+  m_win_top += length / m_win_width;
+  m_win_height -= length / m_win_width;
+
+  esp_cache_msync((void *) fb_back, TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+
+//  lcd_wait_vsync();
+
+#ifdef ENABLE_DOUBLE_BUFFERING  
   if ((void *) fb_back == (void *) fb[0]) {
     set_fb_front((uint16_t *) fb[0]);
+    fb_back = fb[1];
   } else {
     set_fb_front((uint16_t *) fb[1]);
+    fb_back = fb[0];
   }
-  
-  lcd_set_fb_ready();
+#endif
+
+//  lcd_set_fb_ready();
 
 }
+#endif
 
 static void lcd_set_backlight(float percent) {
 #if TEST_PIN_NUM_BK_LIGHT >= 0
@@ -416,20 +463,25 @@ static void lcd_set_backlight(float percent) {
 static void lcd_init(void)
 {
   for (int i = 0; i < 2; i++) {
-    fb[i] = (uint16_t *) heap_caps_calloc(1, 320 * 240 * 2, MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM);
+    fb[i] = (uint16_t *) heap_caps_calloc(1, TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT * 2, MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM);
     assert(fb[i]);
  
-/*
     uint16_t* fb_tmp = fb[i];
 
     // set some bg color
-    for (int i = 0; i < SNES_WIDTH * SNES_HEIGHT_EXTENDED; i++)
-      fb_tmp[i] = 0xaaaa;
-*/
+    for (int j = 0; j < TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT; j++)
+      fb_tmp[j] = 0xaaaa * (i + 1);
+
   }
 
-  set_fb_front((uint16_t *) fb[1]);
-  
+
+  set_fb_front((uint16_t *) fb[0]);
+#ifdef ENABLE_DOUBLE_BUFFERING
+  fb_back = fb[1];
+#else
+  fb_back = fb[0];
+#endif
+
   lcd_config_t lcd_config = {
     .buffer_width = TEST_BUFFER_WIDTH,
     .buffer_height = TEST_BUFFER_HEIGHT,
@@ -438,7 +490,7 @@ static void lcd_init(void)
 
   test_init_lcd(lcd_config);
 
-  vTaskDelay(2000 / portTICK_PERIOD_MS);
+  //vTaskDelay(2000 / portTICK_PERIOD_MS);
   
 }
 
@@ -456,5 +508,8 @@ const rg_display_driver_t rg_display_driver_dsi = {
 
 static void lcd_sync(void)
 {
+//    SDL_BlitSurface(canvas, NULL, surface, NULL);
+//    SDL_UpdateWindowSurface(window);
     lcd_wait_vsync();
 }
+
