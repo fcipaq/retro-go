@@ -4,7 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if RG_SCREEN_DRIVER == 1
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * RG_SCREEN_HEIGHT) // In pixels
+#else
 #define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 4) // In pixels
+#endif
 
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;
@@ -121,6 +125,9 @@ static inline void write_update(const rg_surface_t *update)
         }
 
         uint16_t *line_buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+        #if RG_SCREEN_DRIVER == 1
+        line_buffer += y * RG_SCREEN_WIDTH;
+        #endif
         uint16_t *line_buffer_ptr = line_buffer;
 
         uint32_t checksum = 0xFFFFFFFF;
@@ -522,7 +529,12 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
         for (size_t line = 0; line < num_lines; ++line)
         {
             uint16_t *src = (void *)buffer + ((y + line) * stride);
+            #if RG_SCREEN_DRIVER == 1
+            uint16_t *dst = lcd_buffer + (line + top + display.screen.margins.top) * RG_SCREEN_WIDTH + left + display.screen.margins.left;
+            #else
             uint16_t *dst = lcd_buffer + (line * width);
+            #endif
+            
             if (flags & RG_DISPLAY_WRITE_NOSWAP)
             {
                 memcpy(dst, src, width * 2);
@@ -543,6 +555,21 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
 
 void rg_display_clear_rect(int left, int top, int width, int height, uint16_t color_le)
 {
+
+#if RG_SCREEN_DRIVER == 1
+    const uint16_t color_be = (color_le << 8) | (color_le >> 8);
+
+    uint16_t* dst = lcd_get_buffer(LCD_BUFFER_LENGTH) + top * RG_SCREEN_WIDTH + left;
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        *dst = color_be;
+        dst++;
+      }
+
+      dst += RG_SCREEN_WIDTH - width;
+    }
+#else
     const uint16_t color_be = (color_le << 8) | (color_le >> 8);
     int pixels_remaining = width * height;
     if (pixels_remaining > 0)
@@ -558,6 +585,7 @@ void rg_display_clear_rect(int left, int top, int width, int height, uint16_t co
             pixels_remaining -= pixels;
         }
     }
+#endif
 }
 
 void rg_display_clear_except(int left, int top, int width, int height, uint16_t color_le)

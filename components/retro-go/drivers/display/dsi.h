@@ -364,88 +364,17 @@ void lcd_wait_vsync() {
 
 //================================================ RG system API ==============================================
 
-static int win_left, win_top, win_width, win_height, cursor;
-static uint16_t lcd_buffer[LCD_BUFFER_LENGTH];
-
-static void lcd_set_window(int left, int top, int width, int height)
-{
-    int right = left + width - 1;
-    int bottom = top + height - 1;
-    if (left < 0 || top < 0 || right >= RG_SCREEN_WIDTH || bottom >= RG_SCREEN_HEIGHT)
-        RG_LOGW("Bad lcd window (x0=%d, y0=%d, x1=%d, y1=%d)\n", left, top, right, bottom);
-    win_left = left;
-    win_top = top;
-    win_width = width;
-    win_height = height;
-    cursor = 0;
+static inline uint16_t *lcd_get_buffer(size_t length) {
+  return fb_back;
 }
 
-static inline uint16_t *lcd_get_buffer(size_t length)
-{
-    return (uint16_t*) fb_back;
+static void lcd_set_window(int left, int top, int width, int height) {
 }
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
-    int bpp = 2;
-    int pitch = TEST_BUFFER_WIDTH * bpp;
-    void *pixels = fb_back;
-    for (size_t i = 0; i < length; ++i) {
-        int real_top = win_top + (cursor / win_width);
-        int real_left = win_left + (cursor % win_width);
-        if (real_top >= TEST_BUFFER_HEIGHT || real_left >= TEST_BUFFER_WIDTH)
-            return;
-        uint16_t *dst = (void*)pixels + (real_top * pitch) + (real_left * bpp);
-        //uint16_t pixel = buffer[i];
-        *dst = buffer[i]; //((pixel & 0xFF) << 8) | ((pixel & 0xFF00) >> 8);;
-        cursor++;
-    }
-
     esp_cache_msync((void *) fb_back, TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-
 }
-
-#if 0
-static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
-{
-/*
-  uint16_t* src = buffer;
-  uint16_t* dst = fb_back;
-
-  for (int i = 0; i < length; i++) {
-    *dst = *src;
-    dst++;
-    src++;
-  }
-*/
-
-  for (int y = 0; y < m_win_height; y++) {
-   for (int x = 0; x < m_win_width; x++) {
-     fb_back[(x + m_win_left) + (y + m_win_top) * TEST_BUFFER_WIDTH] = buffer[x + y * m_win_width]; 
-   }
-  }
-
-  m_win_top += length / m_win_width;
-  m_win_height -= length / m_win_width;
-
-  esp_cache_msync((void *) fb_back, TEST_BUFFER_WIDTH * TEST_BUFFER_HEIGHT * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-
-//  lcd_wait_vsync();
-
-#ifdef ENABLE_DOUBLE_BUFFERING  
-  if ((void *) fb_back == (void *) fb[0]) {
-    set_fb_front((uint16_t *) fb[0]);
-    fb_back = fb[1];
-  } else {
-    set_fb_front((uint16_t *) fb[1]);
-    fb_back = fb[0];
-  }
-#endif
-
-//  lcd_set_fb_ready();
-
-}
-#endif
 
 static void lcd_set_backlight(float percent) {
 #if TEST_PIN_NUM_BK_LIGHT >= 0
@@ -473,7 +402,6 @@ static void lcd_init(void)
       fb_tmp[j] = 0xaaaa * (i + 1);
 
   }
-
 
   set_fb_front((uint16_t *) fb[0]);
 #ifdef ENABLE_DOUBLE_BUFFERING
@@ -510,6 +438,6 @@ static void lcd_sync(void)
 {
 //    SDL_BlitSurface(canvas, NULL, surface, NULL);
 //    SDL_UpdateWindowSurface(window);
-    lcd_wait_vsync();
+//    lcd_wait_vsync();
 }
 
