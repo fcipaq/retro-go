@@ -30,7 +30,7 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_io.h"
-#include "esp_lcd_dxq3d9502.h"
+#include "esp_lcd_kd040hdfid032.h"
 
 typedef struct {
   int buffer_width;
@@ -46,7 +46,7 @@ typedef struct {
 #define TEST_LCD_V_RES (720)
 #define TEST_LCD_BIT_PER_PIXEL (16)
 #define TEST_PIN_NUM_LCD_RST (GPIO_NUM_23)
-#define TEST_PIN_NUM_BK_LIGHT (GPIO_NUM_22)  // set to -1 if not used
+#define TEST_PIN_NUM_BK_LIGHT (-1) //(GPIO_NUM_22)  // set to -1 if not used
 #define TEST_LCD_BK_LIGHT_ON_LEVEL (1)
 #define TEST_LCD_BK_LIGHT_OFF_LEVEL !TEST_LCD_BK_LIGHT_ON_LEVEL
 #define TEST_PIN_NUM_VER_FLIP (-1)
@@ -267,17 +267,17 @@ void test_init_lcd(lcd_config_t lcd_config) {
 #endif
 
   ESP_LOGI(TAG, "Initialize MIPI DSI bus");
-  esp_lcd_dsi_bus_config_t bus_config = DXQ3D9502_PANEL_BUS_DSI_2CH_CONFIG();
+  esp_lcd_dsi_bus_config_t bus_config = KD040HDFID032_PANEL_BUS_DSI_2CH_CONFIG();
   assert(esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus) == ESP_OK);
 
   ESP_LOGI(TAG, "Install panel IO");
-  esp_lcd_dbi_io_config_t dbi_config = DXQ3D9502_PANEL_IO_DBI_CONFIG();
+  esp_lcd_dbi_io_config_t dbi_config = KD040HDFID032_PANEL_IO_DBI_CONFIG();
   assert(esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &mipi_dbi_io) == ESP_OK);
 
-  ESP_LOGI(TAG, "Install LCD driver of dxq3d9502");
-  esp_lcd_dpi_panel_config_t dpi_config = DXQ3D9502_720_720_PANEL_50HZ_CONFIG(TEST_MIPI_DPI_PX_FORMAT);
+  ESP_LOGI(TAG, "Install LCD driver of kd040hdfid032");
+  esp_lcd_dpi_panel_config_t dpi_config = KD040HDFID032_720_720_PANEL_50HZ_CONFIG(TEST_MIPI_DPI_PX_FORMAT);
   dpi_config.num_fbs = 2;
-  dxq3d9502_vendor_config_t vendor_config = {
+  kd040hdfid032_vendor_config_t vendor_config = {
     .mipi_config = {
       .dsi_bus = mipi_dsi_bus,
       .dpi_config = &dpi_config,
@@ -293,7 +293,7 @@ void test_init_lcd(lcd_config_t lcd_config) {
     .vendor_config = &vendor_config,
   };
 
-  assert(esp_lcd_new_panel_dxq3d9502(mipi_dbi_io, &panel_config, &panel_handle, LCD_SCALING) == ESP_OK);
+  assert(esp_lcd_new_panel_kd040hdfid032(mipi_dbi_io, &panel_config, &panel_handle, LCD_SCALING) == ESP_OK);
   assert(esp_lcd_dpi_panel_get_frame_buffer(panel_handle, 2, (void **) &fb_hw[0], (void **) &fb_hw[1]) == ESP_OK);
 
 #if 0
@@ -371,6 +371,11 @@ static inline uint16_t *lcd_get_buffer(size_t length)
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
+  if ((void *) fb_back == (void *) fb[0]) {
+    fb_back = fb[1];
+  } else {
+    fb_back = fb[0];
+  }
 
   uint16_t* src = buffer;
   uint16_t* dst = fb_back;
@@ -386,10 +391,8 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
   lcd_wait_vsync();
   
   if ((void *) fb_back == (void *) fb[0]) {
-    fb_back = fb[1];
     set_fb_front((uint16_t *) fb[0]);
   } else {
-    fb_back = fb[0];
     set_fb_front((uint16_t *) fb[1]);
   }
   
@@ -398,6 +401,7 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 }
 
 static void lcd_set_backlight(float percent) {
+#if TEST_PIN_NUM_BK_LIGHT >= 0
   int level = percent * 2.55;
   
   if ((level < 0) || (level > 255))
@@ -406,7 +410,7 @@ static void lcd_set_backlight(float percent) {
   // ledcWrite(1 /* PWM channel */, level /* duty cycle */);
   ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, level));
   ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
-
+#endif
 }
 
 static void lcd_init(void)
@@ -433,6 +437,8 @@ static void lcd_init(void)
   };
 
   test_init_lcd(lcd_config);
+
+  vTaskDelay(2000 / portTICK_PERIOD_MS);
   
 }
 
