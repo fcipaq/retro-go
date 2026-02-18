@@ -2104,6 +2104,9 @@ void rg_gui_about_menu(void)
         // {1, _("View credits", NULL, RG_DIALOG_FLAG_NORMAL, NULL},
         {2, _("Debug menu"), NULL, RG_DIALOG_FLAG_NORMAL, NULL},
         {3, _("Reset settings"), NULL, RG_DIALOG_FLAG_NORMAL, NULL},
+#if defined(RG_GPIO_PWR_EN)
+        {5, _("Shutdown system"), NULL, RG_DIALOG_FLAG_NORMAL, NULL},
+#endif
         RG_DIALOG_END,
     };
 
@@ -2132,6 +2135,11 @@ void rg_gui_about_menu(void)
             case 4:
                 rg_gui_options_menu();
                 break;
+#if defined(RG_GPIO_PWR_EN)
+            case 5:
+                rg_system_shutdown();
+                break;
+#endif
             default:
                 return;
         }

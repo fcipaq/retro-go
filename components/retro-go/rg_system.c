@@ -910,6 +910,14 @@ void rg_system_shutdown(void)
 {
     RG_LOGW("Halting system!");
     shutdown_cleanup();
+#if defined(RG_CUSTOM_PLATFORM_DEINIT)
+    RG_LOGI("Running platform-specific deinit...\n");
+    RG_CUSTOM_PLATFORM_DEINIT();
+#endif
+#if defined(RG_CUSTOM_PLATFORM_SHUTDOWN)
+    RG_LOGI("Running platform-specific shutdown...\n");
+    RG_CUSTOM_PLATFORM_SHUTDOWN();
+#endif
 #ifdef ESP_PLATFORM
     vTaskSuspendAll();
     while (1)
@@ -935,6 +943,10 @@ void rg_system_restart(void)
 {
     RG_LOGW("Restarting system!");
     shutdown_cleanup();
+#if defined(RG_CUSTOM_PLATFORM_DEINIT)
+    RG_LOGI("Running platform-specific deinit...\n");
+    RG_CUSTOM_PLATFORM_DEINIT();
+#endif
 #ifdef ESP_PLATFORM
     esp_restart();
 #else
